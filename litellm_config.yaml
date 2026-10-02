@@ -1,0 +1,40 @@
+# LiteLLM gateway in front of a coding agent (tested with the Antigravity CLI).
+# The Auto Router's built-in JEV classifier is pointed at self-hosted Laya (laya-serve speaks
+# TypeSafe's /v1/systemone protocol), so no prompt text leaves the machine for routing.
+
+model_list:
+  - model_name: gemini-3.5-flash-lite
+    litellm_params: {model: vertex_ai/gemini-3.5-flash-lite, vertex_project: os.environ/GOOGLE_CLOUD_PROJECT, vertex_location: global}
+  - model_name: gemini-3.8-flash
+    litellm_params: {model: vertex_ai/gemini-3.8-flash, vertex_project: os.environ/GOOGLE_CLOUD_PROJECT, vertex_location: global}
+  - model_name: gemini-3.1-pro-preview
+    litellm_params: {model: vertex_ai/gemini-3.1-pro-preview, vertex_project: os.environ/GOOGLE_CLOUD_PROJECT, vertex_location: global}
+
+  # AGY's background jobs (conversation titles) use this one
+  - model_name: gemini-3.1-flash-lite
+    litellm_params: {model: vertex_ai/gemini-3.1-flash-lite, vertex_project: os.environ/GOOGLE_CLOUD_PROJECT, vertex_location: global}
+
+  # Auto Router (works on /v1/chat/completions and /v1/messages; not on AGY's Gemini route, see laya_hook.py)
+  - model_name: smart-router
+    litellm_params:
+      model: auto_router/complexity_router
+      complexity_router_config:
+        tiers:
+          SIMPLE: gemini-3.5-flash-lite
+          MEDIUM: gemini-3.8-flash
+          COMPLEX: gemini-3.8-flash
+          REASONING: gemini-3.1-pro-preview
+        classifier_type: jev
+        jev_classifier_config:
+          api_base: http://127.0.0.1:8701      # laya-serve, not api.typesafe.ai
+          api_key: os.environ/LAYA_API_KEY
+          timeout_ms: 5000
+        classifier_fallback: heuristic
+        session_affinity: true                 # keep a session on one model so its prompt cache stays warm
+      complexity_router_default_model: gemini-3.8-flash
+
+litellm_settings:
+  callbacks: laya_hook.proxy_handler_instance   # Laya picks the tier for AGY's Gemini-format requests
+
+general_settings:
+  # master_key: os.environ/LITELLM_MASTER_KEY   # off for the AGY test: AGY sends a Google OAuth token
